@@ -7,9 +7,12 @@
 # Purpose:      back up filenames with date for any file or directory
 # ============================================
 
-##### ── Function cpy  ───────────────────────────────────────
-##  - backs up files using filename.yyyymmdd.bak on any file or directory
-##  - shortcut to cp -pr for example: cp -pr .file{,.20190505.bak}
+# ------------------------------
+#  [Function cpy]
+#    - backs up files using filename.yyyymmdd.bak on any file or directory
+#    - shortcut to cp -pr for example: cp -pr .file{,.20190505.bak}
+# ------------------------------
+
 cpy () {
     if [[ -z $1 ]]; then
         echo -e " "
@@ -55,4 +58,3 @@ cpy () {
         return 2
     fi
 }      ##### FUNCTION END : cpy
-
