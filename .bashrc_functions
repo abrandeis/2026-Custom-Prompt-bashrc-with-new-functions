@@ -3,11 +3,10 @@
 # ============================================
 # Filename:     .bashrc_functions
 # Description:  Custom .bashrc_functions file
-# Created on:   2026-01-08
+# Created on:   2026-06-01
 # Purpose:      sourcing other functions
 # Functions list: histdel, dfc, du., topfiles,
 # ============================================
-
 
 # Resolve the directory containing the current file
 # Works even when sourced, symlinked, etc.
@@ -72,10 +71,17 @@ if [ -r "${HOME}/ADAM/cust-bash-shell/prod/functions_prod_source" ]; then
   . "${HOME}/ADAM/cust-bash-shell/prod/functions_prod_source"
 fi
 
-#####   ADDITIONAL FUNCTIONS   #####
 
+# ------------------------------
+##    ADDITIONAL FUNCTIONS    ##
+# ------------------------------
+
+# ------------------------------
+#  [Function bvi]  #
 # --- Smart Vim launcher: uses config based on detected major version ---
-# Depends on BASHRC_HOME being set to your root (e.g., ~/cust-bash-shell)
+# --- Depends on BASHRC_HOME being set to your root (e.g., ~/cust-bash-shell)
+# ------------------------------
+
 bvi() {
   # Grab "7" or "8" from: Vim - Vi IMproved X.Y (...
   local major
@@ -106,9 +112,13 @@ bvi() {
   esac
 }
 
-##### ── Helper: delete previous command from history ────────────────────
-##  [History clean up last line delete] #
-##  [Function histdel] #
+
+# ------------------------------
+#  [Function histdel]  #
+#    [History clean up last line delete] 
+#    ── Helper: delete previous command from history
+# ------------------------------
+
 histdel() {
   if [ -f "$HISTFILE" ]; then
     # use sed to delete last 2 lines in place
@@ -126,9 +136,12 @@ histdel() {
 }
 
 
-# Reusable Bash function (crongrep)
-# Case-insensitive variant:
-# Search for a word and print from the header # above to the next # below
+# ------------------------------
+#  [Function crongrep] #
+#   - Case-insensitive variant:
+#   - Search for a word and print from the header # above to the next # below
+# ------------------------------
+
 function crongrep() {
   local pat="$1"
   crontab -l | awk -v IGNORECASE=1 -v pat="$pat" '
