@@ -4,12 +4,14 @@
 # Author:       Adam Brandeis
 # Filename:     .bashrc_cust
 # Created on:   2026-01-08
+# Updated on:   2026-06-01
 # Description:  Custom .bashrc for cust
 # Purpose:      Custom prompt with date/time + server line,
 #               colored prompt, and useful aliases
 # ============================================
 
-##### ── 1)SET CUSTOM BASH HOME ───────────────────────────────────────
+
+####  ── 1) SET CUSTOM BASH HOME ────────────────
 #export BASHRC_HOME="$HOME/custom-bash-shell"
 
 # Resolve the directory containing the current file
@@ -31,11 +33,12 @@ export BASHRC_HOME="$_brc_dir"
 # Turn history on explicitly
 #set -o history
 
-##### ── 2)BASH OPTIONS ───────────────────────────────────────
-# =========================
+####  ── 2) BASH OPTIONS ────────────────
+
+# ------------------------------
 #  BASH OPTIONS
-# =========================
-##### ── 1) Shell options (set early) ───────────────────────────────────────
+# ------------------------------
+##### ── Shell options (set early) ─────
 shopt -s histappend              # When session close, history will append to .bash_history file rather than overwriting
 shopt -s histverify              # Verify history before re-running a command via !<last_command>
 
@@ -52,26 +55,30 @@ shopt -ps cmdhist
 #        newlines rather than using semicolon separators where possible.
 shopt -pu lithist
 
+# expand aliases
+shopt -s expand_aliases
 
-##### ── 3)Better history behavior ───────────────────────────────────────
+# Enable programmable completion
+shopt -s progcomp
+
+####  ── 3) Better history behavior ────────────────
 HISTSIZE=5000
 HISTFILESIZE=100000
 
 HISTTIMEFORMAT="%F %T "
 
 HISTCONTROL=ignorespace:ignoredups
-##### ── 4)HISTIGNORE  ───────────────────────────────────────
+####  ── 4) HISTIGNORE ────────────────
 HISTIG_COMMON='ll:pwd:clear:cls:exit:logout:ag*'
 HISTIG_HIST='history*:hist*:hcg*'
 HISTIG_cust='*custbash*:*sL*:mybashrc*:newsource*:*SUPERbash*'
 HISTIG_FUNCS='histdel*:histdel_last*'
 HISTIGNORE="cd :${HISTIG_COMMON}:${HISTIG_FUNCS}:${HISTIG_HIST}:${HISTIG_cust}"
 
-
-##### ── 5)SOURCE FILES ───────────────────────────────────────
-# =========================
+####  ── 5) SOURCE FILES ────────────────
+# ------------------------------
 #  Source Files
-# =========================
+# ------------------------------
 if [ -f ${BASHRC_HOME}/.bashrc_alias ]; then
     source ${BASHRC_HOME}/.bashrc_alias
 fi
@@ -89,16 +96,15 @@ if [ -f ${BASHRC_HOME}/colors ]; then
 fi
 
 
-# =========================
+# ------------------------------
 #  Color Variables
-# =========================
+# ------------------------------
 C_NC="\e[0m"
 C_RD="\e[31m"
 C_GN="\e[32m"
 C_YW="\e[33m"
 
-
-##### ── PROMPT [PS1] VARIABLES ───────────────────────────────────────
+####  ── 6) PROMPT [PS1] VARIABLES ────────────────
 ##    COLORS IN USE FOR PS
 PSC_NC='\[\e[0m\]'                                  ### Color Reset - No Color
 PSC_RD='\[\e[0;41m\]'                               ### Red BG - White FG
@@ -120,29 +126,32 @@ PSC_ORG='\[\e[38;5;214m\]'
 # Get the FQDN once per shell start
 export FullHost=$(hostname -f)
 
-##### ── BUILD FULL HOSTNAME  ───────────────────────────────────────
+####  ── 7) BUILD FULL HOSTNAME ────────────────
 # =========================
 # Build the colored display version of FullHost (for different hostnames if wanted)
 # 'HOST1' or 'HOST2' -> magenta (return to yellow after each match)
 # Otherwise, whole hostname -> green
-if [[ "$FullHost" == *HOST1* || "$FullHost" == *HOST2* ]]; then
+DIR1="~/MYDIR1"
+DIR2="~/MYDIR2"
+DIR3="~/MYDIR3"
+if [[ "$FullHost" == $(echo $DIR1) || "$FullHost" == $(echo $DIR2) ]]; then
   # Start yellow for the whole line
   colored_host="${PSC_YW}${FullHost}${PSC_NC}"
 
   # Highlight 'HOST1' in magenta, then return to yellow
-  colored_host="${colored_host//int/${PSC_MA}HOST2${PSC_YW}}${PSC_NC}"
+  colored_host="${colored_host//$DIR1/${PSC_MA}HOST2${PSC_YW}}${PSC_NC}"
 
   # Highlight 'HOST2' in magenta, then return to yellow
-  colored_host="${colored_host//report/${PSC_MA}HOST2${PSC_YW}}${PSC_NC}"
+  colored_host="${colored_host//$DIR2/${PSC_MA}HOST2${PSC_YW}}${PSC_NC}"
 
   # Highlight 'HOST3' in magenta, then return to yellow
-  colored_host="${colored_host//gate/${PSC_MA}HOST3${PSC_YW}}${PSC_NC}"
+  colored_host="${colored_host//$DIR3/${PSC_MA}HOST3${PSC_YW}}${PSC_NC}"
 else
   # Entire hostname green
   colored_host="${PSC_GN}${FullHost}${PSC_NC}"
 fi
 
-##### ── DATE/TIME BOX PROD ALERT  ───────────────────────────────────────
+####  ── 8) DATE/TIME BOX PROD ALERT ────────────────
 # =========================
 export PS_DT="$PSC_CY2\d \@$PSC_NC"                 ### Date/Time         - Cyan
 export PSDTHOST="$PSC_YW${colored_host}$PSC_NC"     ### Hostname          - Yellow
@@ -164,7 +173,7 @@ export PS2="${PSC_GN2}continue-> ${PSC_NC}"
 
 SPACER="    "
 
-##### ── SET PROMPT_COMMAND ───────────────────────────────────────
+####  ── 9) SET PROMPT_COMMAND ────────────────
 # =========================
 ##  PROMPT_COMMAND to set the title bar of the putty window                                ::: #
 ##  history -a  # append history lines from this session to the history file.              ::: #
@@ -179,7 +188,9 @@ lessr() {
   less -f -F -R -J -P'?f%f:.. ?m(lines %lt-%lb/%L.  bytes %bt-%bb/%B)?e(END):.  (%p%%)  ?s%s.  ?t%t:..]' $1
 }
 
+
 ## OTHER ATTEMPTS FOR lessr alias 
+alias lessr2='less -f -F -R -J -P'\''?f%f:.. ?m(lines %lt-%lb/%L.  bytes %bt-%bb/%B)?e(END):.  (%p%%)  ?s%s.  ?t%t:..]'\'
 #alias lessr="less -f -F -R -J -P?f%f:.. ?m(lines %lt-%lb/%L.  bytes %bt-%bb/%B)?e(END):.  (%p%%)  ?s%s.  ?t%t:..]"
 #alias lessr='less -f -F -R -J -P'\''?f%f:.. ?m(lines %lt-%lb/%L.  bytes %bt-%bb/%B)?e(END):.  (%p%%)  ?s%s.  ?t%t:..]'\'
 
@@ -194,8 +205,7 @@ export LESS_TERMCAP_ue=$'\e[0m'          # end underline                  [reset
 export LESS_TERMCAP_us=$'\e[01;04;32m'   # begin underline                [bold underlined Green]
 export LESS_TERMCAP_me=$'\e[0m'          # end mode                       [reset]
 
-
-##### ── BASH COMPLETE  ───────────────────────────────────────
+####  ── 9) BASH COMPLETE ────────────────
 # =========================
 ##  COMPLETE
 complete -c type which man whatis locate ## (-c) Add auto complete for specific commands
