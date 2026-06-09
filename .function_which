@@ -4,73 +4,160 @@
 # Author:       Adam Brandeis
 # Filename:     .function_which
 # Created:      2026-01-08
+# Updated:      2026-06-01
 # Purpose:      Custom function for a better which command for unix
 # ============================================
 
 
-########################
-## Color Variables
+# ------------------------------
+#  Color Variables
+# ------------------------------
+
 C_NC="\e[0m"
 C_RD="\e[31m"
 C_GN="\e[32m"
 C_YW="\e[33m"
 
 
-#####
-##  Remove which as alias so function below works
+##  Remove current which as alias so function below works
 if [[ $(type -t which) = "alias"  ]]; then
   unalias which
 fi
 
-#####
-## [Function which ] - Finds the location of a function, alias, builtin, etc
+
+# ------------------------------
+#  [Function which]  #
+#   - Finds the location of a function, alias, builtin, etc
+# ------------------------------
+
 which() {
 ## Written by Adam Brandeis - 2019-11-11
-  if [[ -z $1 ]]; then
-    echo -e " "
-    echo -e "${C_CY}which${C_NC}"
-    echo -e "   ${C_YW} This finds the location of Functions and/or Alias, Builtin, File or Keyword ${C_NC}"
-    echo -e " "
-    echo -e "   ${C_GN} Usage: ${C_NC}"
-    echo -e "   ${C_CY} which ${C_NC}<alias or funciton name or file or builtin or keyword>  ${C_NC}"
-    echo -e " "
-    echo -e "   ${C_YW} Examples: ${C_NC}"
-    echo -e "    ========="
-    echo -e "      ${C_GN}which ll     ${C_NC}"    ## Example Alias
-    echo -e "      ${C_GN}which cpy    ${C_NC}"    ## Example Function
-    echo -e "      ${C_GN}which lcd    ${C_NC}"    ## Example Function
-    echo -e "      ${C_GN}which for    ${C_NC}"    ## Example keyword
-    echo -e "      ${C_GN}which awk    ${C_NC}"    ## Example file
+    local opts=()
+    local silent=0
+    local OPTIND opt
 
-  elif [[ $(type -t $1) =~ (alias|function|builtin|file|keyword)$ ]]; then
-    echo -e " "
-    echo -e "${C_GN}$1 is a          :${C_YW}" $(type -t $1) ${C_NC}
+    # ---------- option parsing ----------
+    while getopts ":as-:" opt; do
+        case "$opt" in
+            a)
+                opts+=("-a")
+                ;;
+            s)
+                opts+=("-s")
+                silent=1
+                ;;
+            -)
+                case "$OPTARG" in
+                    help)
+                        echo
+                        echo -e "${C_CY}which${C_NC} — enhanced bash function"
+                        echo
+                        echo "Usage: which [options] <command>"
+                        echo
+                        echo "Options:"
+                        echo "  -a            show all matches"
+                        echo "  -s            silent (status only)"
+                        echo "  --help        display this help"
+                        echo "  --version     display version"
+                        echo
+                        return 0
+                        ;;
+                    version)
+                        echo "which (enhanced bash function) 1.0.0"
+                        command which --version 2>/dev/null | head -n 1
+                        return 0
+                        ;;
+                    *)
+                        echo "which: invalid option --$OPTARG"
+                        return 2
+                        ;;
+                esac
+                ;;
+            *)
+                echo "which: invalid option"
+                return 2
+                ;;
+        esac
+    done
+    shift $((OPTIND-1))
 
-    if [[ $(type -t $1) == "alias" ]]; then
-      type -a $1
-      echo " "
-      echo -e "${C_GN}$1 is located in :${C_YW}" ${C_NC}
-      grep -Rn --color=always -E '^[[:space:]]*alias[[:space:]]+' ${BASHRC_HOME} ~/.*bash* ~/.profile /etc/{bash.bashrc,bashrc,profile,profile.d} 2>/dev/null | grep $1 | grep -v /*.bak | grep -v ${HOME}/.bash_history
+    [[ $# -eq 0 ]] && {
+        echo "which: missing operand"
+        return 2
+    }
 
-    elif [[ $(type -t $1) == "function" ]]; then
-      shopt -s extdebug
-      echo -e "${C_GN}$1 is located in :${C_YW}" $(declare -F $1) ${C_NC}
-      shopt -u extdebug
-      echo " "
-      type -a $1
+    # --- run builtin which, but NEVER exit early ---
+    builtin_rc=0
+    command which "${opts[@]}" "$@" 2>/dev/null || builtin_rc=$?
 
-    elif  [[ $(type -t $1) =~ (builtin|file|keyword)$ ]]; then
-      echo -e "See          :   man $1"
-      echo " "
-      type -a $1
-      echo " "
-      man -f $1
-    fi
+    # silent mode honours builtin which only
+    (( silent )) && return $builtin_rc
 
-  else
-    echo " "
-    echo -e "${C_RD}$1 not found or not a valid command ${C_NC}"
-  fi
-    echo " "
+    # --- now ALWAYS run enhanced logic ---
+    for cmd in "$@"; do
+        echo
+        if [[ $(type -t "$cmd") =~ ^(alias|function|builtin|file|keyword)$ ]]; then
+            echo -e "${C_GN}$cmd is a          :${C_YW} $(type -t "$cmd") ${C_NC}"
+
+            case "$(type -t "$cmd")" in
+                alias)
+                    type -a "$cmd"
+                    echo
+                    echo -e "${C_GN}$cmd is located in :${C_YW}${C_NC}"
+
+                    grep -Rn --color=always \
+                        -E "^[[:space:]]*alias[[:space:]]+$cmd=" \
+                        ${BASHRC_HOME} ~/.*bash* ~/.profile \
+                        /etc/{bash.bashrc,bashrc,profile,profile.d} \
+                        2>/dev/null \
+                    | grep -v '\.bak$' \
+                    | grep -v "${HOME}/.bash_history"
+                    ;;
+                function)
+                    shopt -s extdebug
+                    echo -e "${C_GN}$cmd is located in :${C_YW} $(declare -F "$cmd") ${C_NC}"
+                    shopt -u extdebug
+                    type -a "$cmd"
+                    ;;
+                *)
+                    type -a "$cmd"
+                  man -f "$cmd" 2>/dev/null
+                    ;;
+            esac
+        else
+            echo -e "${C_RD}$cmd not found or not a valid command${C_NC}"
+        fi
+    done
+
+    return $builtin_rc
+
 }      ##### FUNCTION END : which
 
+
+# ------------------------------
+#  [Helper which ] 
+#    - adds autocomplete to which function
+# ------------------------------
+
+_which_complete()
+{
+    local cur prev
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    # Long / short options
+    if [[ "$cur" == -* ]]; then
+        COMPREPLY=( $(compgen -W "-a -s --help --version" -- "$cur") )
+        return 0
+    fi
+
+    # Command-like entities
+    COMPREPLY+=( $(compgen -A alias -- "$cur") )
+    COMPREPLY+=( $(compgen -A function -- "$cur") )
+    COMPREPLY+=( $(compgen -A builtin -- "$cur") )
+    COMPREPLY+=( $(compgen -A keyword -- "$cur") )
+    COMPREPLY+=( $(compgen -A file -- "$cur") )
+}
+
+complete -F _which_complete which
