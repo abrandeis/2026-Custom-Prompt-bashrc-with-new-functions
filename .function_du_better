@@ -1,17 +1,18 @@
+
 #!/bin/bash
 
 # ============================================
 # Author:       Adam Brandeis
 # Filename:     .function_du_better - alias du.
-# Created:      2026-01-08
+# Created:      2026-06-01
 # Purpose:      Show human-readable, per-item disk usage at depth 1,
 #               sorted by size, with a yellow TOTAL line at the end.
 # ============================================
 
+# ------------------------------
+#  [Function du_better - du.] #
+# ------------------------------
 
-
-########################
-##  [Function du_better - du.] #
 alias du.="du_better"
 # Show human-readable, per-item disk usage at depth 1, sorted by size,
 # with a yellow TOTAL line at the end.
