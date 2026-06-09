@@ -3,14 +3,16 @@
 # ============================================
 # Author:       Adam Brandeis
 # Filename:     .function_topfiles
-# Created:      2026-01-20
+# Created:      2026-06-01
 # Purpose:      List the top N largest files recursively from the current directory
 #               with a header timestamp and per-file modification date/time.
 # ============================================
 
 
-########################
-## [Function topfiles] #
+# ------------------------------
+#  [Function topfiles] #
+# ------------------------------
+
 # List the top N largest files recursively from the current directory,
 # with a header timestamp and per-file modification date/time.
 # Usage:
