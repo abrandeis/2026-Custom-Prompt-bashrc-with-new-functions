@@ -3,7 +3,7 @@
 # ============================================
 # Author:       Adam Brandeis
 # Filename:     .bashrc_alias
-# Created:      2026-01-08
+# Created:      2026-06-01
 # Purpose:      Custom alias list and useful aliases
 # ============================================
 
@@ -23,23 +23,24 @@ export BASHRC_HOME="$_brc_dir"
 # If this file is in a subfolder, e.g., repo/scripts/.bashrc_cust:
 # export BASHRC_HOME="$(cd "$_brc_dir/.." && pwd)"
 
-# ----- Aliases: extra -----
-alias crongrep="crontab -l | grep"
 
-
-## ====================== ##
-## ===== Alias List ===== ##
+# ------------------------------
+#  Alias List  ##
+# ------------------------------
 
 ## ===== Bash List =====
 alias newsource="source ~/.bashrc; source ${BASHRC_HOME}/.bashrc_cust"
 
-# ----- rsync - cust-bash-shell -----
-alias sLl_bash="rsync -avzh -e ssh --update --delete --progress ${BASHRC_HOME}"
-alias sLdr_bash="rsync -avzh -e ssh --update --delete --progress --dry-run ${BASHRC_HOME}"
+
+# ----- rsync helpers  -----
+alias myrsyncdr="rsync -avzh -e ssh --update --progress --dry-run "
+alias myrsyncl="rsync -avzh -e ssh --update --progress "
+
 
 ## ----- vi -----
 alias vim="vim -u ${BASHRC_HOME}/.vim/.vimrc"
 alias vi="vim -u ${BASHRC_HOME}/.vim/.vimrc"
+alias vir="vim -u ${BASHRC_HOME}/.vim/.vimrc -R"
 
 # ----- Quick editors (adjust to your preference) -----
 if command -v vim >/dev/null 2>&1; then
@@ -50,17 +51,25 @@ else
   alias v='vi'
 fi
 
+
 # ----- Aliases: grep -----
 alias grep="grep --color=auto"
 alias cgrep="grep --color=always"
 alias egrep='egrep --color=always'
 alias fgrep='fgrep --color=always'
+alias grepa='grep -a --color=always' # binary grep color always (usually red)
 alias igrep='grep --color=always -i'  # ignore case grep
+alias bgrep='grep -a'  # binary grep no color or default
 
+# ----- Aliases: extra grep -----
 alias psefg="ps -ef | grep -v 'grep' | grep $1"
-
+alias crongrep="crontab -l | grep"
+alias cg="crontab -l | cgrep"
 
 # ----- Aliases: core -----
+alias ag="alias | cgrep"
+alias hcg="history | cgrep"
+alias hist="history"
 alias cls="printf '\e[H\e[2J'"
 alias ls='ls --color=auto'
 alias ll='ls -alF --group-directories-first'
@@ -68,10 +77,7 @@ alias la='ls -A'
 alias l='ls -CF'
 alias goal='ls -goal --color=always'
 alias lsl='ls -latr'
-alias hist="history"
-alias hcg="history | cgrep"
-alias ag="alias | cgrep"
-alias cg="crontab -l | cgrep"
+
 
 # ----- Sudo convenience -----
 alias please='sudo'
@@ -141,5 +147,4 @@ if command -v kubectl >/dev/null 2>&1; then
   alias kgn='kubectl get nodes'
   alias kctx='kubectl config current-context'
 fi
-
 
