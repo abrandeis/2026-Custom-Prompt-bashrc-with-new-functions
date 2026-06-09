@@ -7,8 +7,9 @@
 # Purpose:      to show a better human-readable disk usage with colors
 # ============================================
 
-########################
-## [Function dfc] #
+# ------------------------------
+#  [Function dfc] #
+# ------------------------------
 
 # Show human-readable disk usage with colors:
 # - Header in cyan
@@ -164,6 +165,4 @@ EOF
     '
   fi
 }      ##### FUNCTION END : dfc
-
-
 
