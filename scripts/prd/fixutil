@@ -1,0 +1,486 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ============================================
+# Author:    Adam Brandeis
+# Filename:  fixutil (for fixlog and fixfmt functions)
+# Created:   2026-03-17
+# Purpose:   Stream-friendly FIX log formatter and filter.
+#            - Provides two user-facing commands:
+#              * fixlog → fast inline FIX log viewing with delimiter replacement
+#              * fixfmt → decoded, colorized, and pretty-formatted FIX output
+#            - Normalizes FIX SOH delimiters (real SOH, ^A, \x01, \001)
+#            - Strips upstream ANSI escape sequences (e.g., from grep --color)
+#            - Designed for use with grep, cat, head, tail, tail -f, and less
+#            - Reads from STDIN by default; accepts files as arguments
+#
+#            - add fixfmt soft link 
+#                ln -s fixutil fixfmt
+# Layouts:
+#   ${SFX_INSTALL_PATH}/data/LT/logs/<session>/logs/
+#   ${SFX_INSTALL_PATH}/data/LP/logs/<session>/logs/
+# ============================================
+
+import sys
+import os
+import re
+import argparse
+
+# ---------- Mode detection ----------
+def detect_mode():
+    """Detect invoked mode robustly by inspecting argv[0]."""
+    name = os.path.basename(sys.argv[0]).lower()
+    if 'fixfmt' in name:
+        return 'fixfmt'
+    if 'fixlog' in name:
+        return 'fixlog'
+    return 'fixlog'  # conservative default
+MODE = detect_mode()
+
+# ---------- ANSI helpers ----------
+class Ansi:
+    RESET = '\x1b[0m'
+    BOLD = '\x1b[1m'
+    DIM = '\x1b[2m'
+    RED = '\x1b[31m'
+    GREEN = '\x1b[32m'
+    YELLOW = '\x1b[33m'
+    BLUE = '\x1b[34m'
+    MAGENTA = '\x1b[35m'
+    CYAN = '\x1b[36m'
+    GRAY = '\x1b[90m'
+
+ANSI_RE = re.compile(r'\x1b\[[0-9;]*m')
+def strip_ansi(s: str) -> str:
+    return ANSI_RE.sub('', s)
+
+# ---------- FIX dictionaries (extend as needed) ----------
+TAG_NAMES = {
+    8: "BeginString",
+    9: "BodyLength",
+    10: "CheckSum",
+    34: "MsgSeqNum",
+    35: "MsgType",
+    49: "SenderCompID",
+    52: "SendingTime",
+    56: "TargetCompID",
+    98: "EncryptMethod",
+    108: "HeartBtInt",
+    141: "ResetSeqNumFlag",
+    262: "MDReqID",
+    268: "NoMDEntries",
+    269: "MDEntryType",
+    270: "MDEntryPx",
+    271: "MDEntrySize",
+    299: "QuoteEntryID",
+    55: "Symbol",
+    167: "SecurityType",
+}
+
+MSGTYPE_ENUM = {
+    "0": "Heartbeat",
+    "1": "TestRequest",
+    "2": "ResendRequest",
+    "3": "Reject",
+    "4": "SequenceReset",
+    "5": "Logout",
+    "A": "Logon",
+    "8": "ExecutionReport",
+    "D": "NewOrderSingle",
+    "F": "OrderCancelRequest",
+    "W": "MarketDataSnapshotFullRefresh",
+    "X": "MarketDataIncrementalRefresh",
+}
+
+ENUMS = {
+    35: MSGTYPE_ENUM,
+    269: {
+        "0": "Bid",
+        "1": "Offer",
+        "2": "Trade",
+        "3": "IndexValue",
+        "4": "OpeningPrice",
+        "5": "ClosingPrice",
+        "6": "SettlementPrice",
+        "7": "TradingSessionHighPrice",
+        "8": "TradingSessionLowPrice",
+        "9": "VWAP",
+    },
+    141: {"Y": "Yes", "N": "No"},
+    98: {
+        "0": "None",
+        "1": "PKCS",
+        "2": "DES",
+        "3": "PKCSDES",
+        "4": "PGPDES",
+        "5": "PGPDESMD5",
+        "6": "PEM",
+    },
+}
+
+# ---------- Core helpers ----------
+def to_actual_soh(s: str) -> str:
+    """Normalize different SOH variants to actual 0x01, after stripping ANSI."""
+    # Remove any upstream ANSI color before normalization (from grepa)
+    s = strip_ansi(s)
+    # Replace textual escapes first, then caret-A
+    s = s.replace(r'\x01', '\x01')
+    s = s.replace(r'\001', '\x01')
+    s = s.replace('^A', '\x01')
+    return s
+
+def find_prefix_and_payload(s: str):
+    """Preserve timestamp/metadata prefix; return (prefix, payload)."""
+    m = re.search(r'\b[0-9A-Za-z]+=', s)
+    if not m:
+        return s, ''
+    return s[:m.start()], s[m.start():]
+
+def decode_field(tag_str: str, val: str, decode: bool):
+    """Return (display_name, display_value, enum_hint)."""
+    enum_hint = ""
+    display_name = tag_str
+    if decode:
+        try:
+            tag_num = int(tag_str)
+        except ValueError:
+            tag_num = None
+        if tag_num is not None and tag_num in TAG_NAMES:
+            display_name = TAG_NAMES[tag_num]
+            if tag_num in ENUMS:
+                desc = ENUMS[tag_num].get(val)
+                if desc:
+                    enum_hint = f'[{desc}]'
+        elif tag_str == '35':
+            desc = MSGTYPE_ENUM.get(val)
+            if desc:
+                enum_hint = f'[{desc}]'
+    return display_name, val, enum_hint
+
+def colorize_pair(tag_str, label, value, enum_hint, enable_color: bool):
+    """Colored 'label=value [enum]' without padding."""
+    if not enable_color:
+        return f"{label}={value}{(f' {enum_hint}' if enum_hint else '')}"
+
+    try:
+        tag_num = int(tag_str)
+    except ValueError:
+        tag_num = None
+
+    name_col = Ansi.CYAN
+    val_col = Ansi.RESET
+    if tag_num == 35:   # MsgType
+        name_col = Ansi.YELLOW + Ansi.BOLD
+        val_col = Ansi.YELLOW + Ansi.BOLD
+    elif tag_num == 55: # Symbol
+        name_col = Ansi.MAGENTA + Ansi.BOLD
+        val_col = Ansi.MAGENTA
+    elif tag_num == 270: # Price
+        name_col = Ansi.GREEN + Ansi.BOLD
+        val_col = Ansi.GREEN
+    elif tag_num == 271: # Size
+        name_col = Ansi.BLUE + Ansi.BOLD
+        val_col = Ansi.BLUE
+    elif tag_num == 10:  # CheckSum
+        name_col = Ansi.GRAY
+        val_col = Ansi.GRAY
+
+    enum_txt = f" {Ansi.DIM}{enum_hint}{Ansi.RESET}" if enum_hint else ""
+    return f"{name_col}{label}{Ansi.RESET}={val_col}{value}{Ansi.RESET}{enum_txt}"
+
+def colorize_inline(tag_str, label, value, enum_hint, enable_color: bool, pad_label=False, width=0):
+    """Inline/columns token; can pad label (width) when needed."""
+    if pad_label:
+        label = label.ljust(width)
+    return colorize_pair(tag_str, label, value, enum_hint, enable_color)
+
+def join_delim(name: str):
+    """Map user-friendly delimiter names/literals to actual delimiter."""
+    if name in ('space', ' '):
+        return ' '
+    if name in ('pipe', '|'):
+        return '|'
+    if name in ('tab', '\t'):
+        return '\t'
+    return ' '
+
+# ---------- CLI ----------
+def build_parser():
+    epilog = r"""
+Examples:
+  # Inline delimiter replacement (default delimiter = space)
+  grep -a '35=A' file.out | {prog}
+
+  # Choose delimiter (pipe or tab)
+  grep -a '35=A' file.out | {prog} --delim '|'
+  tail -f file.out | {prog} -s tab
+
+  # fixfmt decoded & color, one tag per line (wrap, combined labels)
+  grep -a '35=A' file.out | fixfmt -d -c | less -R
+
+  # Columns view with even-width cells (3 per row) – --cols implies columns
+  grep -a '35=W' file.out | fixfmt -d -c --cols 3 | less -R
+""".format(prog=os.path.basename(sys.argv[0]))
+
+    p = argparse.ArgumentParser(
+        prog=os.path.basename(sys.argv[0]),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=(
+            "fixutil: Stream-friendly FIX log formatter and filter.\n"
+            "Invoked as 'fixlog' (inline) or 'fixfmt' (decoded/color/pretty)."
+        ),
+        epilog=epilog
+    )
+
+    p.add_argument('files', nargs='*', help='Input files (default: stdin)')
+
+    # Delimiter for inline mode
+    p.add_argument('--delim', '-s', default='space',
+                   choices=['space', 'pipe', 'tab', ' ', '|', '\t'],
+                   help="Output delimiter for inline mode (default: space). Alias: -s")
+
+    # Normalization toggle (default ON)
+    p.add_argument('--normalize', dest='normalize', action='store_true', default=True,
+                   help="Normalize SOH-like sequences (^A, \\x01, \\001) to actual SOH (default: on).")
+    p.add_argument('--no-normalize', dest='normalize', action='store_false',
+                   help="Disable normalization of SOH-like sequences.")
+
+    # Decode/Translate
+    p.add_argument('--decode', '-d', action='store_true', default=False,
+                   help="Decode common FIX tags/enums.")
+    p.add_argument('--translate', '-t', action='store_true', default=False,
+                   help="Alias for --decode (same behavior).")
+
+    # Pretty mode
+    p.add_argument('--pretty', '-p', default=None, choices=['none', 'wrap', 'columns'],
+                   help="Pretty mode: none (inline), wrap (one per line), columns (aligned).")
+    p.add_argument('--cols', type=int, default=None,
+                   help="Pack this many fields per row (implies columns when provided, unless -p wrap).")
+
+    # Color
+    p.add_argument('--color', '-c', nargs='?', const='auto', default=None,
+                   choices=['auto', 'always', 'never'],
+                   help="Colorize output (auto/always/never). -c alone equals --color auto.")
+
+    # Label style
+    p.add_argument('--label-style', default=None,
+                   choices=['name', 'numeric', 'combined'],
+                   help="How to label fields: 'name' (SenderCompID), 'numeric' (49), "
+                        "'combined' ((49) SenderCompID).")
+
+    # Wrap separator (between label and value in wrap mode)
+    p.add_argument('--wrap-sep', default=None,
+                   help="Separator used in wrap mode between label and value. "
+                        "Accepted names: 'tab', 'space', 'pipe' or literal strings (e.g., ': ').")
+    return p
+
+def normalize_wrap_sep(s: str) -> str:
+    if s is None:
+        return '\t'  # default
+    low = s.lower()
+    if low == 'tab':
+        return '\t'
+    if low == 'space':
+        return ' '
+    if low == 'pipe':
+        return ' | '
+    return s  # literal
+
+# ---------- IO ----------
+def iter_lines_from_files_or_stdin(paths):
+    if not paths:
+        for line in sys.stdin:
+            yield line
+    else:
+        for path in paths:
+            with open(path, 'r', errors='replace') as f:
+                for line in f:
+                    yield line
+
+# ---------- Effective defaults logic ----------
+def compute_effective(args):
+    """
+    Compute effective settings from flags + invocation name.
+    Rules:
+      - If user enabled decode/translate, act like fixfmt by default:
+          pretty=wrap, label_style=combined, color=auto.
+      - If --cols N given (and not wrap), force columns.
+      - If invoked as fixfmt (or decode), defaults align with fixfmt.
+      - Else (fixlog), defaults are inline with chosen delimiter, no color, no decode.
+    """
+    decode_flag = args.decode or args.translate
+
+    # Base defaults by mode
+    if MODE == 'fixfmt' or decode_flag:
+        eff = {
+            'pretty': 'wrap',
+            'decode': True,
+            'color': 'auto' if args.color is None else args.color,
+            'label_style': 'combined' if args.label_style is None else args.label_style,
+            'normalize': True if args.normalize else False,
+            'delim': args.delim if args.delim else 'space',
+            'cols': args.cols,
+            'wrap_sep': normalize_wrap_sep(args.wrap_sep),
+        }
+    else:
+        eff = {
+            'pretty': 'none' if args.pretty is None else args.pretty,
+            'decode': False,
+            'color': 'never' if args.color is None else args.color,
+            'label_style': 'name' if args.label_style is None else args.label_style,
+            'normalize': True if args.normalize else False,
+            'delim': args.delim if args.delim else 'space',
+            'cols': args.cols,
+            'wrap_sep': normalize_wrap_sep(args.wrap_sep),
+        }
+
+    # Explicit user overrides for pretty if provided
+    if args.pretty is not None:
+        eff['pretty'] = args.pretty
+
+    # --cols implies columns unless explicitly wrap
+    if (eff['cols'] is not None) and (eff['cols'] >= 1) and eff['pretty'] != 'wrap':
+        eff['pretty'] = 'columns'
+
+    return eff
+
+# ---------- Processing ----------
+def process_line(raw_line: str, eff):
+    line = raw_line.rstrip('\n')
+
+    # Always strip upstream ANSI (from grepa) before anything else
+    s = strip_ansi(line)
+    # Then optionally normalize SOH variants
+    s = to_actual_soh(s) if eff['normalize'] else s
+
+    prefix, payload = find_prefix_and_payload(s)
+    if not payload:
+        return line  # pass-through if no tags found
+
+    # Ensure payload split works (normalize again to be safe)
+    payload = to_actual_soh(payload)
+    fields = [f for f in payload.split('\x01') if f]
+
+    kv = []
+    for f in fields:
+        if '=' not in f:
+            continue
+        k, v = f.split('=', 1)
+        kv.append((k, v))
+    if not kv:
+        return line
+
+    decode = eff['decode']
+    pretty = eff['pretty']
+    color_mode = eff['color']
+    color_enabled = (color_mode == 'always') or (color_mode == 'auto' and sys.stdout.isatty())
+    label_style = eff['label_style']
+
+    # Build display entries
+    disp = []
+    for k, v in kv:
+        name, val, enum_hint = decode_field(k, v, decode)
+
+        # Build label according to requested style
+        label = name  # default
+        if label_style != 'name':
+            try:
+                tag_num = int(k)
+            except ValueError:
+                tag_num = None
+            if label_style == 'numeric':
+                label = k if tag_num is None else str(tag_num)
+            elif label_style == 'combined':
+                if tag_num is not None:
+                    label = f"({tag_num}) {name}"
+                else:
+                    label = name
+
+        if pretty == 'none':
+            disp.append(colorize_inline(k, label, val, enum_hint, color_enabled))
+        else:
+            disp.append((k, label, val, enum_hint))
+
+    # Inline (fixlog style)
+    if pretty == 'none':
+        delim = join_delim(eff['delim'])
+        return f"{prefix}{delim.join(disp)}"
+
+    # Pretty (fixfmt style)
+    lines = []
+    header = prefix.rstrip()
+    if header:
+        lines.append(header)
+
+    if pretty == 'wrap':
+        sep = eff['wrap_sep'] if eff['wrap_sep'] is not None else '\t'
+        for k, label, val, enum_hint in disp:
+            if color_enabled:
+                token = colorize_pair(k, label, val, enum_hint, enable_color=True)
+                parts = token.split('=', 1)
+                if len(parts) == 2:
+                    left, right = parts
+                    lines.append(left + sep + right)
+                else:
+                    lines.append(token)
+            else:
+                enum_txt = f" {enum_hint}" if enum_hint else ""
+                lines.append(f"{label}{sep}{val}{enum_txt}")
+        return "\n".join(lines)
+
+    if pretty == 'columns':
+        colored = [colorize_inline(k, label, val, enum_hint, color_enabled) for (k, label, val, enum_hint) in disp]
+        if eff['cols'] is None or eff['cols'] < 2:
+            # align by the label width for a classic vertical look
+            label_width = max(len(label) for _, label, _, _ in disp)
+            for k, label, val, enum_hint in disp:
+                lines.append(colorize_inline(k, label.ljust(label_width), val, enum_hint, color_enabled))
+            return "\n".join(lines)
+
+        # Even-width cells per message for multi-column grid
+        plain = [strip_ansi(x) for x in colored]
+        cell_width = max(len(t) for t in plain) if plain else 0
+
+        N = eff['cols']
+        rows, row = [], []
+        for token in colored:
+            row.append(token)
+            if len(row) == N:
+                rows.append(row)
+                row = []
+        if row:
+            rows.append(row)
+
+        gap = '  '
+        for r in rows:
+            parts = []
+            for token in r:
+                pad = cell_width - len(strip_ansi(token))
+                parts.append(token + (' ' * pad))
+            lines.append(gap.join(parts))
+        return "\n".join(lines)
+
+    # Fallback (shouldn't hit)
+    return f"{prefix}" + " ".join([f"{label}={val}" for _, label, val, _ in disp])
+
+# ---------- Main ----------
+def main():
+    # Best-effort line buffering for tail -f
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+
+    parser = build_parser()
+    args = parser.parse_args()
+    eff = compute_effective(args)
+
+    for line in iter_lines_from_files_or_stdin(args.files):
+        out = process_line(line, eff)
+        if out.endswith("\n"):
+            sys.stdout.write(out)
+        else:
+            sys.stdout.write(out + "\n")
+
+if __name__ == '__main__':
+    main()
+
