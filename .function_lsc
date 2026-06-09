@@ -3,13 +3,15 @@
 # ============================================
 # Author:       Adam Brandeis
 # Filename:     .function_lsc
-# Created:      2026-01-08
+# Created:      2026-06-01
 # Purpose:      List files with ls -latr and show counts of dirs/files at the bottom in yellow.
 # ============================================
 
 
-########################
-## [Function ls_with_counts - lsc] #
+# ------------------------------
+#  [Function ls_with_counts - lsc] #
+# ------------------------------
+
 alias lsc="ls_with_counts"
 # List files with ls -latr and show counts of dirs/files at the bottom in yellow.
 ls_with_counts() {
